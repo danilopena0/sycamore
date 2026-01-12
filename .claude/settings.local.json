@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.who.int)",
+      "WebSearch",
+      "WebFetch(domain:www.cdc.gov)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)"
+    ]
+  }
+}

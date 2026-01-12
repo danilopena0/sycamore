@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sycamore - Baby Growth Calculator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sycamore</h1>
+            <p class="subtitle">Baby Growth Percentile Calculator</p>
+        </header>
+
+        <main>
+            <form id="growth-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sex">Sex</label>
+                        <select id="sex" name="sex" required>
+                            <option value="">Select...</option>
+                            <option value="male">Boy</option>
+                            <option value="female">Girl</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="age_months">Age (months)</label>
+                        <input type="number" id="age_months" name="age_months"
+                               min="0" max="24" step="1" placeholder="0-24" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="weight_kg">Weight (kg)</label>
+                        <input type="number" id="weight_kg" name="weight_kg"
+                               min="0.5" max="20" step="0.01" placeholder="e.g., 5.5" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="length_cm">Length (cm)</label>
+                        <input type="number" id="length_cm" name="length_cm"
+                               min="30" max="100" step="0.1" placeholder="e.g., 60.5" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary">Calculate Percentiles</button>
+            </form>
+
+            <div id="results" class="results hidden">
+                <h2>Results</h2>
+                <div class="result-cards">
+                    <div class="result-card">
+                        <h3>Weight</h3>
+                        <div class="percentile" id="weight-percentile">--</div>
+                        <div class="percentile-label">percentile</div>
+                        <p class="interpretation" id="weight-interpretation"></p>
+                        <p class="median-info" id="weight-median"></p>
+                    </div>
+                    <div class="result-card">
+                        <h3>Length</h3>
+                        <div class="percentile" id="length-percentile">--</div>
+                        <div class="percentile-label">percentile</div>
+                        <p class="interpretation" id="length-interpretation"></p>
+                        <p class="median-info" id="length-median"></p>
+                    </div>
+                </div>
+                <button type="button" id="save-btn" class="btn-secondary">Save Measurement</button>
+            </div>
+
+            <div id="history" class="history hidden">
+                <h2>Saved Measurements</h2>
+                <div id="history-list"></div>
+                <button type="button" id="clear-history" class="btn-danger">Clear All</button>
+            </div>
+
+            <div id="comparison" class="comparison hidden">
+                <h2>Growth Comparison</h2>
+                <div id="comparison-content"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p class="disclaimer">
+                Based on WHO Child Growth Standards (0-24 months).
+                Percentiles show how your baby compares to other babies of the same age and sex.
+                Always consult your pediatrician for medical advice.
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // Storage key
+        const STORAGE_KEY = 'sycamore_measurements';
+
+        // Current result for saving
+        let currentResult = null;
+
+        // Load saved measurements
+        function loadMeasurements() {
+            const data = localStorage.getItem(STORAGE_KEY);
+            return data ? JSON.parse(data) : [];
+        }
+
+        // Save measurement
+        function saveMeasurement(measurement) {
+            const measurements = loadMeasurements();
+            measurement.id = Date.now();
+            measurement.date = new Date().toLocaleDateString();
+            measurements.push(measurement);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(measurements));
+            renderHistory();
+        }
+
+        // Clear all measurements
+        function clearMeasurements() {
+            localStorage.removeItem(STORAGE_KEY);
+            renderHistory();
+        }
+
+        // Delete single measurement
+        function deleteMeasurement(id) {
+            const measurements = loadMeasurements().filter(m => m.id !== id);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(measurements));
+            renderHistory();
+        }
+
+        // Render history
+        function renderHistory() {
+            const measurements = loadMeasurements();
+            const historySection = document.getElementById('history');
+            const historyList = document.getElementById('history-list');
+
+            if (measurements.length === 0) {
+                historySection.classList.add('hidden');
+                document.getElementById('comparison').classList.add('hidden');
+                return;
+            }
+
+            historySection.classList.remove('hidden');
+
+            historyList.innerHTML = measurements.map(m => `
+                <div class="history-item">
+                    <div class="history-info">
+                        <span class="history-date">${m.date}</span>
+                        <span class="history-details">
+                            ${m.age_months}mo, ${m.sex === 'male' ? 'Boy' : 'Girl'} -
+                            ${m.weight_kg}kg (${m.weight.percentile}%),
+                            ${m.length_cm}cm (${m.length.percentile}%)
+                        </span>
+                    </div>
+                    <button class="btn-delete" onclick="deleteMeasurement(${m.id})">Remove</button>
+                </div>
+            `).join('');
+
+            // Show comparison if more than one measurement
+            if (measurements.length >= 2) {
+                renderComparison(measurements);
+            } else {
+                document.getElementById('comparison').classList.add('hidden');
+            }
+        }
+
+        // Render comparison
+        function renderComparison(measurements) {
+            const comparisonSection = document.getElementById('comparison');
+            const comparisonContent = document.getElementById('comparison-content');
+
+            // Sort by age
+            const sorted = [...measurements].sort((a, b) => a.age_months - b.age_months);
+            const first = sorted[0];
+            const last = sorted[sorted.length - 1];
+
+            if (first.id === last.id) {
+                comparisonSection.classList.add('hidden');
+                return;
+            }
+
+            comparisonSection.classList.remove('hidden');
+
+            const weightChange = last.weight.percentile - first.weight.percentile;
+            const lengthChange = last.length.percentile - first.length.percentile;
+
+            const formatChange = (val) => {
+                if (val > 0) return `<span class="change-up">+${val.toFixed(1)}</span>`;
+                if (val < 0) return `<span class="change-down">${val.toFixed(1)}</span>`;
+                return `<span class="change-same">0</span>`;
+            };
+
+            comparisonContent.innerHTML = `
+                <p class="comparison-summary">
+                    Comparing ${first.age_months} months to ${last.age_months} months:
+                </p>
+                <div class="comparison-stats">
+                    <div class="comparison-stat">
+                        <span class="stat-label">Weight percentile</span>
+                        <span class="stat-value">${first.weight.percentile}% → ${last.weight.percentile}%</span>
+                        <span class="stat-change">${formatChange(weightChange)} points</span>
+                    </div>
+                    <div class="comparison-stat">
+                        <span class="stat-label">Length percentile</span>
+                        <span class="stat-value">${first.length.percentile}% → ${last.length.percentile}%</span>
+                        <span class="stat-change">${formatChange(lengthChange)} points</span>
+                    </div>
+                </div>
+                <p class="comparison-note">
+                    ${getGrowthNote(weightChange, lengthChange)}
+                </p>
+            `;
+        }
+
+        function getGrowthNote(weightChange, lengthChange) {
+            const absW = Math.abs(weightChange);
+            const absL = Math.abs(lengthChange);
+
+            if (absW < 10 && absL < 10) {
+                return "Your baby is growing consistently along their growth curve.";
+            } else if (absW > 20 || absL > 20) {
+                return "There's been a notable change in growth percentiles. Consider discussing with your pediatrician.";
+            } else {
+                return "Some variation in percentiles is normal as babies grow.";
+            }
+        }
+
+        // Form submission
+        document.getElementById('growth-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = {
+                sex: document.getElementById('sex').value,
+                age_months: document.getElementById('age_months').value,
+                weight_kg: document.getElementById('weight_kg').value,
+                length_cm: document.getElementById('length_cm').value
+            };
+
+            try {
+                const response = await fetch('/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    alert(result.error);
+                    return;
+                }
+
+                // Store for saving
+                currentResult = {
+                    ...formData,
+                    weight: result.weight,
+                    length: result.length
+                };
+
+                // Display results
+                document.getElementById('results').classList.remove('hidden');
+
+                document.getElementById('weight-percentile').textContent =
+                    result.weight.percentile.toFixed(1);
+                document.getElementById('weight-interpretation').textContent =
+                    result.weight.interpretation;
+                document.getElementById('weight-median').textContent =
+                    `Median for age: ${result.weight.median} kg`;
+
+                document.getElementById('length-percentile').textContent =
+                    result.length.percentile.toFixed(1);
+                document.getElementById('length-interpretation').textContent =
+                    result.length.interpretation;
+                document.getElementById('length-median').textContent =
+                    `Median for age: ${result.length.median} cm`;
+
+                // Color code percentiles
+                colorPercentile('weight-percentile', result.weight.percentile);
+                colorPercentile('length-percentile', result.length.percentile);
+
+            } catch (error) {
+                alert('Error calculating percentiles. Please try again.');
+            }
+        });
+
+        function colorPercentile(elementId, percentile) {
+            const el = document.getElementById(elementId);
+            el.classList.remove('percentile-low', 'percentile-normal', 'percentile-high');
+
+            if (percentile < 3 || percentile > 97) {
+                el.classList.add('percentile-high');
+            } else if (percentile < 15 || percentile > 85) {
+                el.classList.add('percentile-normal');
+            } else {
+                el.classList.add('percentile-normal');
+            }
+        }
+
+        // Save button
+        document.getElementById('save-btn').addEventListener('click', () => {
+            if (currentResult) {
+                saveMeasurement(currentResult);
+                alert('Measurement saved!');
+            }
+        });
+
+        // Clear history button
+        document.getElementById('clear-history').addEventListener('click', () => {
+            if (confirm('Remove all saved measurements?')) {
+                clearMeasurements();
+            }
+        });
+
+        // Load history on page load
+        renderHistory();
+    </script>
+</body>
+</html>
